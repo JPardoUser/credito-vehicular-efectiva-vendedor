@@ -313,7 +313,6 @@ function buildPdfDocument(lines){
   content.push(`0.04 0.1 0.2 rg`); // color de bank en azul oscuro
   text(102, 802, 22, 'bank', true);
   content.push(`1.0 1.0 1.0 rg`); // reset color a blanco
-  text(58, 790, 10, 'Tu banco vehicular', true);
 
   // Título de la carta en blanco a la derecha
   text(260, 802, 20, 'CARTA DE APROBACION', true);
