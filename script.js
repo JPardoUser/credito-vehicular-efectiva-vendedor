@@ -308,13 +308,16 @@ function buildPdfDocument(lines){
   content.push(`1.0 1.0 1.0 rg`);
   content.push(`42 818 m 56 818 l 48 810 l 56 802 l 42 802 l 42 818 l f`);
 
-  // Escribir el texto de marca en blanco
-  text(58, 802, 22, 'fectiva', true);
-  text(58, 790, 10, 'Tu financiera', true);
+  // Escribir el texto de marca (Fase 2 de logo: fecti en blanco, bank en azul oscuro)
+  text(58, 802, 22, 'fecti', true);
+  content.push(`0.04 0.1 0.2 rg`); // color de bank en azul oscuro
+  text(102, 802, 22, 'bank', true);
+  content.push(`1.0 1.0 1.0 rg`); // reset color a blanco
+  text(58, 790, 10, 'Tu banco vehicular', true);
 
   // Título de la carta en blanco a la derecha
   text(260, 802, 20, 'CARTA DE APROBACION', true);
-  text(260, 790, 11, 'CREDITO VEHICULAR EFECTIVA', true);
+  text(260, 790, 11, 'CREDITO VEHICULAR EFECTIBANK', true);
 
   // Barra de título interna
   rect(42, 706, 510, 26, '0.93 0.96 1');
@@ -350,7 +353,7 @@ function buildPdfDocument(lines){
       // Firma de la financiera
       rect(340, y, 180, 1, '0.6 0.6 0.6');
       content.push(`0.12 0.16 0.22 rg`);
-      text(340, y - 12, 9, 'Financiera Efectiva S.A.', true);
+      text(340, y - 12, 9, 'Efectibank S.A.', true);
       text(340, y - 22, 8, 'Representante Autorizado');
       y -= 40;
     } else {
@@ -366,7 +369,7 @@ function buildPdfDocument(lines){
   rect(0, 0, pageWidth, 42, '0.21 0.43 0.96');
   content.push(`1.0 1.0 1.0 rg`);
   text(46, 22, 9, `Fecha de emision: ${new Date().toLocaleDateString('es-PE')}`, true);
-  text(315, 22, 9, 'Efectiva tu financiera - Documento referencial de credito', true);
+  text(315, 22, 9, 'Efectibank - Documento referencial de credito', true);
 
   const contentStream = content.join('\n');
   const contentId = addObject(`<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream`);
@@ -711,7 +714,7 @@ function downloadSimulationPlan() {
 
   lines.push(
     {type:'section', text:'Condiciones de la Simulacion Seleccionada'},
-    {label:'Tipo de Credito', value: 'Simulacion Vehicular Efectiva'},
+    {label:'Tipo de Credito', value: 'Simulacion Vehicular Efectibank'},
     {label:'Precio del Vehiculo', value: priceVal > 0 ? `$ ${formatMoney(priceVal)}` : '$ 0.00'},
     {label:'Monto de Cuota Inicial', value: initialVal > 0 ? `$ ${formatMoney(initialVal)}` : 'Sin inicial'},
     {label:'Monto a Financiar', value: `$ ${formatMoney(financedVal)}`},
