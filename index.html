@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=1.07" />
 
   <style>
     .hidden { display: none !important; }
@@ -323,10 +323,12 @@
         </div>
 
         <!-- 4. SI APLICA o no -->
-        <div class="success-box">
-          <div class="check-icon">✓</div>
+        <!-- 4. SI APLICA o no -->
+        <div id="resultSuccessBox" class="success-box">
+          <div id="resultIcon" class="check-icon">✓</div>
           <div>
-            <strong id="resultStatusText">APLICA</strong>
+            <strong id="resultStatusText">CALIFICA</strong>
+            <p id="resultMessageText" style="margin: 5px 0 0; font-size: 16px; font-weight: 600; line-height: 1.4; display: none;"></p>
           </div>
         </div>
 
@@ -400,10 +402,10 @@
               <label for="filterCarretera">Carretera</label>
               <select id="filterCarretera">
                 <option value="">Seleccionar</option>
-                <option value="EXPRESS">Express</option>
-                <option value="ESCRITORIO">Escritorio</option>
-                <option value="SEMI FULL">Semi Full</option>
-                <option value="FULL">Full</option>
+                <option value="Express">Express</option>
+                <option value="Preferente">Preferente</option>
+                <option value="Verificado">Verificado</option>
+                <option value="Full">Full</option>
               </select>
             </div>
             <div class="field">
@@ -420,7 +422,6 @@
                 <option value="">Seleccionar</option>
                 <option value="PENDIENTE ENVÍO">Pendiente envío</option>
                 <option value="ENVIADO">Enviado</option>
-                <option value="NO CALIFICA">No califica</option>
                 <option value="EN ATENCIÓN">En atención</option>
                 <option value="APROBADO">Aprobado</option>
                 <option value="ACTIVADO">Activado</option>
@@ -436,12 +437,14 @@
           <table class="bandeja-table">
             <thead>
               <tr>
-                <th>N° Solicitud</th>
-                <th>N° Documento</th>
-                <th>Sucursal</th>
-                <th>Carretera</th>
+                <th>Solicitud</th>
+                <th>Documento</th>
+                <th>Cliente</th>
                 <th>Fecha</th>
+                <th>Resultado</th>
+                <th>Carretera</th>
                 <th>Estado</th>
+                <th>Sucursal</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -458,11 +461,8 @@
   <div id="trackingModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="trackingTitle">
     <div class="modal-card tracking-card">
       <h3 id="trackingTitle">Solicitud <span id="trackingSolicitud">EFE002</span></h3>
-      <div class="tracking-line">
-        <div class="tracking-step done"><span></span><strong>Enviado</strong><small>20-05-2025<br>15:03:30</small></div>
-        <div class="tracking-step done"><span></span><strong>En atención</strong><small>20-05-2025<br>15:03:30</small></div>
-        <div class="tracking-step done"><span></span><strong>Aprobado</strong><small>20-05-2025<br>15:03:30</small></div>
-        <div class="tracking-step"><span></span><strong>Activado</strong><small>Pendiente</small></div>
+      <div id="trackingLine" class="tracking-line">
+        <!-- Generado dinámicamente en JS -->
       </div>
       <button type="button" id="closeTrackingModal" class="btn primary">Aceptar</button>
     </div>
@@ -482,6 +482,8 @@
         <input type="text" class="sms-digit-input" maxlength="1" style="width: 48px; height: 48px; text-align: center; font-size: 20px; font-weight: 700; border: 2px solid var(--line); border-radius: 8px; outline: none; transition: border-color 0.2s; color: var(--text);" aria-label="Dígito 3">
         <input type="text" class="sms-digit-input" maxlength="1" style="width: 48px; height: 48px; text-align: center; font-size: 20px; font-weight: 700; border: 2px solid var(--line); border-radius: 8px; outline: none; transition: border-color 0.2s; color: var(--text);" aria-label="Dígito 4">
       </div>
+      
+      <p id="otpTimerText" style="color: var(--danger); font-size: 0.85rem; font-weight: 700; margin-top: -12px; margin-bottom: 20px;">Tiempo restante: 05:00</p>
 
       <div style="display: flex; gap: 12px;">
         <button type="button" id="btnCancelSmsVerification" class="btn secondary" style="flex: 1; border-radius: var(--radius-sm);">Cancelar</button>
@@ -515,6 +517,6 @@
 
   <div id="toast" class="toast">Simulación generada correctamente.</div>
 
-  <script src="script.js?v=1.06"></script>
+  <script src="script.js?v=1.07"></script>
 </body>
 </html>

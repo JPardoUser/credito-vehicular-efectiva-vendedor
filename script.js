@@ -176,23 +176,74 @@ const btnAcceptSede = $('btnAcceptSede');
 let currentResultContext = 'simulation';
 let activeBandejaItem = null;
 
-// Valores fijos del cuadro Línea Preaprobada.
-// Regla: estos datos no deben cambiar bajo ninguna circunstancia.
-const LINEA_PREAPROBADA_FIJA = {
-  monto: 'S/ 380,000.00',
-  cuotaInicialMinima: '10%',
-  plazo: '60 meses'
+function simularCuotasBantotal(financed, term, teaPercent) {
+  const tem = Math.pow(1 + teaPercent / 100, 1 / 12) - 1;
+  const payment = financed * (tem * Math.pow(1 + tem, term)) / (Math.pow(1 + tem, term) - 1);
+  return payment;
+}
+
+// Database of preapproved clients (mockClientes)
+const mockClientes = {
+  "70569533": {
+    nombres: "Augusto Chavez Altamirano",
+    documento: "70569533",
+    estadoCivil: "SOLTERO",
+    conyuge: null,
+    montoPreaprobado: 380000,
+    cuotaInicialMinima: 10,
+    plazoMaximo: 60,
+    carretera: "Express",
+    TEA: 12.90,
+    resultado: "CALIFICA",
+    documentosRequeridos: ["COPIA DE DNI (ambas caras)"]
+  },
+  "71406119": {
+    nombres: "Carlos Mendoza Ruiz",
+    documento: "71406119",
+    estadoCivil: "CASADO",
+    conyuge: { tipoDoc: "DNI", numDoc: "32984112", nombres: "Ana Gomez Suarez" },
+    montoPreaprobado: 250000,
+    cuotaInicialMinima: 20,
+    plazoMaximo: 48,
+    carretera: "Preferente",
+    TEA: 14.50,
+    resultado: "AUMENTAR INICIAL",
+    documentosRequeridos: ["COPIA DE DNI (ambas caras)", "Copia de recibo de servicios (luz o agua)", "Constancia de trabajo simple"]
+  },
+  "80569877": {
+    nombres: "Juan Pedro Pérez García",
+    documento: "80569877",
+    estadoCivil: "SOLTERO",
+    conyuge: null,
+    montoPreaprobado: 180000,
+    cuotaInicialMinima: 15,
+    plazoMaximo: 36,
+    carretera: "Verificado",
+    TEA: 16.00,
+    resultado: "REQUIERE SUSTENTO",
+    documentosRequeridos: ["COPIA DE DNI (ambas caras)", "Sustento de ingresos (últimas 3 boletas de pago)", "Estado de cuenta bancario"]
+  }
 };
 
-function aplicarLineaPreaprobadaFija() {
-  const amountEl = document.getElementById('rPreApprovedAmount');
-  const minInitialEl = document.getElementById('rMinInitial');
-  const termEl = document.getElementById('rPreApprovedTerm');
-
-  if (amountEl) amountEl.textContent = LINEA_PREAPROBADA_FIJA.monto;
-  if (minInitialEl) minInitialEl.textContent = LINEA_PREAPROBADA_FIJA.cuotaInicialMinima;
-  if (termEl) termEl.textContent = LINEA_PREAPROBADA_FIJA.plazo;
+// Add cuotasPreliminares dynamically to each client in mockClientes
+for (let key in mockClientes) {
+  const c = mockClientes[key];
+  const baseFinancedSoles = c.montoPreaprobado * (1 - c.cuotaInicialMinima / 100);
+  c.cuotasPreliminares = [12, 24, 36, 48, 60].map(term => {
+    const cuotaSoles = simularCuotasBantotal(baseFinancedSoles, term, c.TEA);
+    return {
+      plazo: term,
+      cuota: `S/ ${cuotaSoles.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    };
+  });
 }
+
+// OTP logic variables
+let otpValidated = false;
+let otpAttempts = 0;
+let otpBlocked = false;
+let otpTimer = null;
+let otpTimeRemaining = 0;
 
 const onlyDigits = (value) => value.replace(/[^0-9]/g, '');
 const toNumber = (value) => Number(String(value).replace(/,/g, '').replace(/[^0-9.]/g, '')) || 0;
@@ -230,27 +281,15 @@ function pdfEscape(value){
   return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
-const roadByCapacity = capacidad => capacidad === 'SUSTENTAR INGRESO' ? 'FULL' : 'EXPRESS';
-
-function determineRoad(capacity, term) {
-  if (capacity === 'SUSTENTAR INGRESO') {
-    return (term === 12 || term === 24) ? 'FULL' : 'SEMI FULL';
-  } else {
-    if (term === 60) return 'EXPRESS';
-    if (term === 24) return 'SEMI FULL';
-    return 'ESCRITORIO'; // 48 y 36 cuotas
-  }
-}
-
 function getDocsMarkupForRoad(road) {
   switch (road) {
-    case 'EXPRESS':
+    case 'Express':
       return `
         <ul class="docs-list">
           <li>COPIA DE DNI (ambas caras)</li>
         </ul>
       `;
-    case 'ESCRITORIO':
+    case 'Preferente':
       return `
         <ul class="docs-list">
           <li>COPIA DE DNI (ambas caras)</li>
@@ -258,7 +297,7 @@ function getDocsMarkupForRoad(road) {
           <li>Constancia de trabajo simple</li>
         </ul>
       `;
-    case 'SEMI FULL':
+    case 'Verificado':
       return `
         <ul class="docs-list">
           <li>COPIA DE DNI (ambas caras)</li>
@@ -266,7 +305,7 @@ function getDocsMarkupForRoad(road) {
           <li>Estado de cuenta bancario</li>
         </ul>
       `;
-    case 'FULL':
+    case 'Full':
     default:
       return `
         <ul class="docs-list">
@@ -280,9 +319,9 @@ function getDocsMarkupForRoad(road) {
 }
 
 function docsByRoad(road){
-  if(road === 'EXPRESS') return ['COPIA DE DNI (ambas caras)'];
-  if(road === 'ESCRITORIO') return ['COPIA DE DNI (ambas caras)', 'Copia de recibo de servicios', 'Constancia de trabajo simple'];
-  if(road === 'SEMI FULL') return ['COPIA DE DNI (ambas caras)', 'Sustento de ingresos (3 boletas)', 'Estado de cuenta bancario'];
+  if(road === 'Express') return ['COPIA DE DNI (ambas caras)'];
+  if(road === 'Preferente') return ['COPIA DE DNI (ambas caras)', 'Copia de recibo de servicios', 'Constancia de trabajo simple'];
+  if(road === 'Verificado') return ['COPIA DE DNI (ambas caras)', 'Sustento de ingresos (3 boletas)', 'Estado de cuenta bancario'];
   return ['COPIA DE DNI (ambas caras)','Sustento de ingresos completo (PDT/Boletas)','Estados de cuenta de 6 meses','Verificacion domiciliaria/laboral presencial'];
 }
 
@@ -391,15 +430,11 @@ function buildPdfDocument(lines){
 }
 
 const bandejaData = [
-  { solicitud: 'EFE001', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'PENDIENTE ENVÍO', selectedTerm: 48, hasSpouse: true, vehicleCost: 450000, initialAmount: 0, sucursal: 'Lima Centro', carretera: 'EXPRESS' },
-  { solicitud: 'EFE002', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'ENVIADO', selectedTerm: 48, hasSpouse: true, vehicleCost: 450000, initialAmount: 0, sucursal: 'Lima Norte', carretera: 'EXPRESS' },
-  { solicitud: 'EFE003', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'NO CALIFICA', selectedTerm: 36, hasSpouse: false, vehicleCost: 450000, initialAmount: 0, sucursal: 'Lima Sur', carretera: 'FULL' },
-  { solicitud: 'POP001', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'EN ATENCIÓN', selectedTerm: 60, hasSpouse: false, vehicleCost: 450000, initialAmount: 0, sucursal: 'Arequipa', carretera: 'SEMI FULL' },
-  { solicitud: 'POP002', documento: '780598744', fecha: '20-05-2025 15:03:30', estado: 'APROBADO', selectedTerm: 24, hasSpouse: true, vehicleCost: 450000, initialAmount: 0, sucursal: 'Trujillo', carretera: 'ESCRITORIO' },
-  { solicitud: 'POP003', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'ACTIVADO', selectedTerm: 12, hasSpouse: false, vehicleCost: 450000, initialAmount: 0, sucursal: 'Lima Centro', carretera: 'FULL' },
-  { solicitud: 'POP004', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'PENDIENTE ENVÍO', selectedTerm: null, hasSpouse: false, vehicleCost: 450000, initialAmount: 0, sucursal: 'Lima Norte', carretera: 'EXPRESS' },
-  { solicitud: 'POP005', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'ENVIADO', selectedTerm: 36, hasSpouse: false, vehicleCost: 450000, initialAmount: 0, sucursal: 'Lima Sur', carretera: 'ESCRITORIO' },
-  { solicitud: 'POP006', documento: '80569877', fecha: '20-05-2025 15:03:30', estado: 'NO CALIFICA', selectedTerm: 48, hasSpouse: false, vehicleCost: 450000, initialAmount: 0, sucursal: 'Arequipa', carretera: 'FULL' }
+  { solicitud: 'EFE001', documento: '70569533', fecha: '20-06-2026 10:15:30', estado: 'PENDIENTE ENVÍO', selectedTerm: 48, hasSpouse: false, vehicleCost: 25000, initialAmount: 3000, sucursal: 'Lima Centro', carretera: 'Express' },
+  { solicitud: 'SOL00001', documento: '71406119', fecha: '20-06-2026 11:30:00', estado: 'ENVIADO', selectedTerm: 36, hasSpouse: true, vehicleCost: 30000, initialAmount: 9000, sucursal: 'Lima Norte', carretera: 'Preferente' },
+  { solicitud: 'SOL00002', documento: '80569877', fecha: '20-06-2026 12:45:15', estado: 'EN ATENCIÓN', selectedTerm: 60, hasSpouse: false, vehicleCost: 15000, initialAmount: 2250, sucursal: 'Arequipa', carretera: 'Verificado' },
+  { solicitud: 'SOL00003', documento: '70569533', fecha: '20-06-2026 14:00:22', estado: 'APROBADO', selectedTerm: 24, hasSpouse: false, vehicleCost: 18000, initialAmount: 1800, sucursal: 'Trujillo', carretera: 'Express' },
+  { solicitud: 'SOL00004', documento: '80569877', fecha: '20-06-2026 15:20:10', estado: 'ACTIVADO', selectedTerm: 48, hasSpouse: false, vehicleCost: 20000, initialAmount: 3000, sucursal: 'Lima Sur', carretera: 'Verificado' }
 ];
 
 function markResultPhoneRequired() {
@@ -495,32 +530,68 @@ function validateForm() {
   simulateBtn.disabled = !(baseOk && spouseOk);
 }
 
-function generateQuotaRows({ financed, selectedTerm = null, disabled = false, alwaysSustentar = false, item = null }) {
-  const terms = [60, 48, 36, 24, 12];
+
+function formatOtpTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function startOtpTimer() {
+  otpTimeRemaining = 300; // 5 minutes
+  if (otpTimer) clearInterval(otpTimer);
+  
+  const timerEl = $('otpTimerText');
+  if (timerEl) {
+    timerEl.textContent = `Tiempo restante: ${formatOtpTime(otpTimeRemaining)}`;
+  }
+
+  otpTimer = setInterval(() => {
+    otpTimeRemaining--;
+    if (otpTimeRemaining <= 0) {
+      clearInterval(otpTimer);
+      otpBlocked = true;
+      if (timerEl) timerEl.textContent = "Código expirado.";
+      smsVerificationModal.classList.add('hidden');
+      showLoginAlert("El código OTP ha expirado. Por seguridad se bloqueó el servicio.", "Bloqueado");
+    } else {
+      if (timerEl) timerEl.textContent = `Tiempo restante: ${formatOtpTime(otpTimeRemaining)}`;
+    }
+  }, 1000);
+}
+
+function generateQuotaRowsDynamic({ financed, client, outcome, selectedTerm = null }) {
+  const terms = [12, 24, 36, 48, 60];
   quotaBody.innerHTML = '';
 
-  terms.forEach((term, index) => {
-    const quota = Math.max((financed / term) * 1.22, 0);
-    const quotaSoles = quota * 3.8;
-    const capacity = (alwaysSustentar || term === 12) ? 'SUSTENTAR INGRESO' : 'CALIFICA';
+  terms.forEach((term) => {
+    const financedInSoles = financed * 3.8;
+    const quotaSoles = simularCuotasBantotal(financedInSoles, term, client.TEA);
+    
+    let capacity = 'CALIFICA';
+    if (outcome === 'REQUIERE SUSTENTO' || outcome === 'AUMENTAR INICIAL') {
+      capacity = 'SUSTENTAR INGRESO';
+    }
+    
     const checked = term === selectedTerm ? 'checked' : '';
-    const disabledAttr = disabled ? 'disabled' : '';
+    const isLocked = activeBandejaItem && activeBandejaItem.estado !== 'PENDIENTE ENVÍO';
+    const disabledAttr = isLocked ? 'disabled' : '';
 
     const tr = document.createElement('tr');
     tr.dataset.capacity = capacity;
     tr.dataset.term = term;
     tr.innerHTML = `
-      <td data-label="Plazo">${term} cuotas</td>
-      <td data-label="Cuota - Sin seguro">S/ ${quotaSoles.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-      <td data-label="Tasa">12.90%</td>
+      <td data-label="Plazo">${term} meses</td>
+      <td data-label="Cuota">S/ ${quotaSoles.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+      <td data-label="TEA">${client.TEA.toFixed(2)}%</td>
       <td data-label="Capacidad"><span class="${capacity === 'CALIFICA' ? 'ok' : 'warn'}">${capacity}</span></td>
-      <td data-label="Selección"><input type="checkbox" class="quota-check" aria-label="Seleccionar plazo ${term} cuotas" ${checked} ${disabledAttr}></td>
+      <td data-label="Selección"><input type="checkbox" class="quota-check" aria-label="Seleccionar plazo ${term} meses" ${checked} ${disabledAttr}></td>
     `;
     quotaBody.appendChild(tr);
   });
-  aplicarLineaPreaprobadaFija();
 
-  if (!disabled) {
+  const isLocked = activeBandejaItem && activeBandejaItem.estado !== 'PENDIENTE ENVÍO';
+  if (!isLocked) {
     document.querySelectorAll('.quota-check').forEach(check => {
       check.addEventListener('change', (event) => {
         if (event.target.checked) {
@@ -528,144 +599,104 @@ function generateQuotaRows({ financed, selectedTerm = null, disabled = false, al
             if (other !== event.target) other.checked = false;
           });
         }
-
+        
         const selected = document.querySelector('.quota-check:checked');
         const termVal = selected ? Number(selected.closest('tr').dataset.term) : null;
-
-        if (item) {
-          item.selectedTerm = termVal;
+        
+        if (activeBandejaItem) {
+          activeBandejaItem.selectedTerm = termVal;
         }
+        
         sendExecutiveBtn.disabled = !termVal;
-        aplicarLineaPreaprobadaFija();
-        updateRoadBySelectedCapacity();
+        updateSendPdfBtnState();
+        updateDownloadApprovalBtnState();
       });
     });
-
-    const selected = document.querySelector('.quota-check:checked');
-    sendExecutiveBtn.disabled = !selected;
-    updateRoadBySelectedCapacity();
-  } else {
-    updateRoadBySelectedCapacity();
   }
-}
 
-function getSelectedCapacity() {
   const selected = document.querySelector('.quota-check:checked');
-  const selectedRow = selected ? selected.closest('tr') : null;
-  return selectedRow ? selectedRow.dataset.capacity : 'CALIFICA';
-}
-
-function calculateCapacity(price, initial) {
-  const financed = Math.max(price - initial, 0);
-  const initialPercent = price > 0 ? initial / price : 0;
-  return initialPercent >= 0.20 || financed <= 160000 ? 'CALIFICA' : 'SUSTENTAR INGRESO';
-}
-
-function calculateScore(price, initial, capacity) {
-  const initialPercent = price > 0 ? initial / price : 0;
-  const base = capacity === 'CALIFICA' ? 780 : 610;
-  const bonus = Math.min(140, Math.round(initialPercent * 300));
-  const penalty = price > 300000 ? 45 : price > 200000 ? 20 : 0;
-  return Math.max(350, Math.min(980, base + bonus - penalty));
-}
-
-function scoreSegment(score) {
-  if (score >= 930) return { segment: 'AAA', description: 'Cliente Excelente', range: '930 - 999', level: 'excellent' };
-  if (score >= 850) return { segment: 'AA', description: 'Cliente Bueno', range: '850 - 929', level: 'good' };
-  if (score >= 700) return { segment: 'A', description: 'Cliente Regular', range: '700 - 849', level: 'regular' };
-  if (score >= 400) return { segment: 'B', description: 'Cliente Bajo', range: '400 - 699', level: 'low' };
-  return { segment: 'C', description: 'Cliente Malo', range: 'Menor a 400', level: 'bad' };
-}
-
-function updateScoreDisplay(cost, initial, capacity, item = null) {
-  let scoreVal = 750;
-  if (item && item.score !== undefined) {
-    scoreVal = item.score;
-  } else {
-    scoreVal = calculateScore(cost, initial, capacity);
-  }
-  if (item) {
-    item.score = scoreVal;
-  }
-
-  const scoreData = scoreSegment(scoreVal);
-  const scoreValueEl = $('scoreValue');
-  const scoreSegmentEl = $('scoreSegment');
-  const scoreDescriptionEl = $('scoreDescription');
-  const scoreRangeEl = $('scoreRange');
-  const scoreDotEl = $('scoreDot');
-  const scoreProgressEl = $('scoreProgress');
-
-  if (scoreValueEl) scoreValueEl.textContent = scoreVal;
-  if (scoreSegmentEl) scoreSegmentEl.textContent = `${scoreData.segment} - ${scoreData.description}`;
-  if (scoreDescriptionEl) scoreDescriptionEl.textContent = `Segmentación ${scoreData.segment}: ${scoreData.description}`;
-  if (scoreRangeEl) scoreRangeEl.textContent = `Rango: ${scoreData.range}`;
+  sendExecutiveBtn.disabled = !selected;
   
-  if (scoreDotEl) {
-    scoreDotEl.className = `score-dot ${scoreData.level}`;
-  }
-  
-  if (scoreProgressEl) {
-    scoreProgressEl.style.width = `${Math.min(100, Math.max(0, scoreVal / 999 * 100))}%`;
-    scoreProgressEl.className = scoreData.level;
-  }
-}
-
-function updateRoadBySelectedCapacity() {
-  const selectedCapacity = getSelectedCapacity();
-  const term = getSelectedTerm() || 48; // Default a 48
-  const road = determineRoad(selectedCapacity, term);
-
-  if (roadBadge) {
-    roadBadge.textContent = `Cartera ${road}`;
-  }
-  roadDocs.textContent = `Cartera: ${road}`;
-  requiredDocs.innerHTML = getDocsMarkupForRoad(road);
-
-  const roadClass = road.toLowerCase().replace(' ', '-');
-  if (roadBadge) {
-    roadBadge.className = `road-badge ${roadClass}`;
-  }
-  roadDocs.className = `road-docs ${roadClass}`;
-
   updateSendPdfBtnState();
   updateDownloadApprovalBtnState();
 }
 
-function setResultStatus(type) {
-  const resultBox = document.querySelector('.success-box');
-  const resultIcon = document.querySelector('.check-icon');
-  const resultTitle = document.getElementById('resultStatusText') || document.querySelector('.success-box strong');
-  const resultMessage = document.querySelector('.success-box p');
-
-  const isLowProbability = type === 'low-probability';
-  resultBox.classList.toggle('low-probability', isLowProbability);
-  if (resultIcon) {
-    resultIcon.textContent = isLowProbability ? '!' : '✓';
-    resultIcon.setAttribute('aria-hidden', 'true');
+function recalculateSimulation(client, cost, initial) {
+  let outcome = client.resultado;
+  const financedUSD = Math.max(cost - initial, 0);
+  
+  const minInitialPercent = client.cuotaInicialMinima;
+  const minInitialUSDByPercent = cost * (minInitialPercent / 100);
+  const minInitialUSDByCap = cost - (client.montoPreaprobado / 3.8);
+  const minInitialRequiredUSD = Math.max(minInitialUSDByPercent, minInitialUSDByCap);
+  
+  if (client.resultado === 'AUMENTAR INICIAL') {
+    if (initial >= minInitialRequiredUSD) {
+      outcome = 'CALIFICA';
+    } else {
+      outcome = 'AUMENTAR INICIAL';
+    }
   }
-  if (resultTitle) {
-    resultTitle.textContent = isLowProbability ? 'NO APLICA' : 'APLICA';
+  
+  const successBox = $('resultSuccessBox');
+  const resultIcon = $('resultIcon');
+  const resultTitle = $('resultStatusText');
+  const resultMessage = $('resultMessageText');
+  
+  if (successBox) {
+    successBox.className = 'success-box';
+    if (outcome === 'CALIFICA') {
+      successBox.classList.add('califica');
+      if (resultIcon) resultIcon.textContent = '✓';
+      if (resultTitle) resultTitle.textContent = 'CALIFICA';
+      if (resultMessage) {
+        resultMessage.style.display = 'none';
+        resultMessage.textContent = '';
+      }
+    } else if (outcome === 'AUMENTAR INICIAL') {
+      successBox.classList.add('aumentar-inicial');
+      if (resultIcon) resultIcon.textContent = '⚠';
+      if (resultTitle) resultTitle.textContent = 'AUMENTAR INICIAL';
+      if (resultMessage) {
+        resultMessage.style.display = 'block';
+        resultMessage.innerHTML = `Se requiere incrementar la cuota inicial. Inicial mínima requerida: <strong>$ ${money(minInitialRequiredUSD)}</strong> (cubre cuota inicial del ${minInitialPercent}% y exceso de línea preaprobada).`;
+      }
+    } else if (outcome === 'REQUIERE SUSTENTO') {
+      successBox.classList.add('requiere-sustento');
+      if (resultIcon) resultIcon.textContent = '⚠';
+      if (resultTitle) resultTitle.textContent = 'REQUIERE SUSTENTO';
+      if (resultMessage) {
+        resultMessage.style.display = 'block';
+        resultMessage.textContent = 'Su solicitud requiere de una evaluación especializada. Por favor, presente los documentos de sustento requeridos.';
+      }
+    }
   }
-  if (resultMessage) {
-    resultMessage.textContent = '';
-    resultMessage.style.display = 'none';
-  }
-}
-
-function setFullEvaluationDocuments() {
+  
+  const road = client.carretera;
   if (roadBadge) {
-    roadBadge.textContent = 'Cartera FULL';
-    roadBadge.className = 'road-badge full';
+    roadBadge.textContent = `Cartera ${road}`;
+    roadBadge.className = `road-badge ${road.toLowerCase()}`;
   }
-  roadDocs.textContent = 'Cartera: FULL';
-  roadDocs.className = 'road-docs full';
-  requiredDocs.innerHTML = getDocsMarkupForRoad('FULL');
-}
-
-function updatePreApprovedBox(cost, initial, selectedTerm) {
-  // La Línea Preaprobada está en duro y no depende del precio, cuota inicial, plazo ni selección de cuota.
-  aplicarLineaPreaprobadaFija();
+  if (roadDocs) {
+    roadDocs.textContent = `Carretera: ${road}`;
+    roadDocs.className = `road-docs ${road.toLowerCase()}`;
+  }
+  if (requiredDocs) {
+    requiredDocs.innerHTML = getDocsMarkupForRoad(road);
+  }
+  
+  // En REQUIERE SUSTENTO no ocultamos ni preaprobado ni cuotas, se ven normales
+  const preapprovedDetails = document.querySelector('.preapproved-box .preapproved-details');
+  if (preapprovedDetails) {
+    preapprovedDetails.style.display = 'flex';
+  }
+  
+  generateQuotaRowsDynamic({
+    financed: financedUSD,
+    client: client,
+    outcome: outcome,
+    selectedTerm: activeBandejaItem ? activeBandejaItem.selectedTerm : null
+  });
 }
 
 function downloadSimulationPlan() {
@@ -676,18 +707,30 @@ function downloadSimulationPlan() {
   const priceVal = toNumber(document.getElementById('rCost').value);
   const initialVal = toNumber(document.getElementById('rInitial').value);
 
+  const client = mockClientes[numDoc];
+  if (!client) return;
+
   const checkedQuota = document.querySelector('.quota-check:checked');
-  let plazo = '48 cuotas';
+  let plazo = '48 meses';
   let cuota = 'S/ 0.00';
-  let capacity = 'CALIFICA';
   if (checkedQuota) {
     const row = checkedQuota.closest('tr');
     plazo = row.querySelector('td:nth-child(1)').textContent.trim();
     cuota = row.querySelector('td:nth-child(2)').textContent.trim();
-    capacity = row.dataset.capacity || 'CALIFICA';
   }
 
-  const road = roadByCapacity(capacity);
+  // Get recalculated outcome
+  const minInitialPercent = client.cuotaInicialMinima;
+  const minInitialUSDByPercent = priceVal * (minInitialPercent / 100);
+  const minInitialUSDByCap = priceVal - (client.montoPreaprobado / 3.8);
+  const minInitialRequiredUSD = Math.max(minInitialUSDByPercent, minInitialUSDByCap);
+  
+  let outcome = client.resultado;
+  if (client.resultado === 'AUMENTAR INICIAL' && initialVal >= minInitialRequiredUSD) {
+    outcome = 'CALIFICA';
+  }
+
+  const road = client.carretera;
   const hasSpouse = !document.getElementById('rSpouseGridContainer').classList.contains('hidden');
   const spouseNombre = document.getElementById('rSpouseName').value || '';
   const spouseTipoDoc = document.getElementById('rSpouseTipoDoc').value || 'DNI';
@@ -717,10 +760,11 @@ function downloadSimulationPlan() {
     {label:'Precio del Vehiculo', value: priceVal > 0 ? `$ ${formatMoney(priceVal)}` : '$ 0.00'},
     {label:'Monto de Cuota Inicial', value: initialVal > 0 ? `$ ${formatMoney(initialVal)}` : 'Sin inicial'},
     {label:'Monto a Financiar', value: `$ ${formatMoney(financedVal)}`},
-    {label:'Tasa de Interes (TEA)', value: '12.90%'},
+    {label:'Tasa de Interes (TEA)', value: `${client.TEA.toFixed(2)}%`},
     {label:'Plazo de Financiamiento', value: plazo},
     {label:'Cuota Mensual Estimada', value: cuota},
-    {label:'Modalidad de Evaluacion', value: `Carretera ${road}`}
+    {label:'Modalidad de Evaluacion', value: `Carretera ${road}`},
+    {label:'Resultado de la Evaluacion', value: outcome}
   );
 
   lines.push({type:'section', text:'Requisitos Obligatorios'});
@@ -757,18 +801,19 @@ function downloadApprovalLetter() {
   const priceVal = toNumber(document.getElementById('rCost').value);
   const initialVal = toNumber(document.getElementById('rInitial').value);
 
+  const client = mockClientes[numDoc];
+  if (!client) return;
+
   const checkedQuota = document.querySelector('.quota-check:checked');
-  let plazo = '48 cuotas';
+  let plazo = '48 meses';
   let cuota = 'S/ 0.00';
-  let capacity = 'CALIFICA';
   if (checkedQuota) {
     const row = checkedQuota.closest('tr');
     plazo = row.querySelector('td:nth-child(1)').textContent.trim();
     cuota = row.querySelector('td:nth-child(2)').textContent.trim();
-    capacity = row.dataset.capacity || 'CALIFICA';
   }
 
-  const road = roadByCapacity(capacity);
+  const road = client.carretera;
   const hasSpouse = !document.getElementById('rSpouseGridContainer').classList.contains('hidden');
   const spouseNombre = document.getElementById('rSpouseName').value || '';
   const spouseTipoDoc = document.getElementById('rSpouseTipoDoc').value || 'DNI';
@@ -798,7 +843,7 @@ function downloadApprovalLetter() {
     {label:'Precio del Vehiculo', value: priceVal > 0 ? `$ ${formatMoney(priceVal)}` : '$ 0.00'},
     {label:'Monto de Cuota Inicial', value: initialVal > 0 ? `$ ${formatMoney(initialVal)}` : 'Sin inicial'},
     {label:'Monto a Financiar', value: `$ ${formatMoney(financedVal)}`},
-    {label:'Tasa de Interes (TEA)', value: '12.90%'},
+    {label:'Tasa de Interes (TEA)', value: `${client.TEA.toFixed(2)}%`},
     {label:'Plazo de Financiamiento', value: plazo},
     {label:'Cuota Mensual Estimada', value: cuota},
     {label:'Modalidad de Evaluacion', value: `Carretera ${road}`}
@@ -843,21 +888,37 @@ function updateDownloadApprovalBtnState() {
   const isChecked = (selectedCheck !== null);
   const phoneVal = resultPhone.value.trim();
   
-  let road = 'EXPRESS';
-  if (selectedCheck) {
-    const row = selectedCheck.closest('tr');
-    const capacity = row.dataset.capacity || 'CALIFICA';
-    const term = Number(row.dataset.term) || 48;
-    road = determineRoad(capacity, term);
-  } else {
-    const isFull = (currentResultContext === 'no-califica') || (roadDocs.textContent.includes('FULL'));
-    road = isFull ? 'FULL' : 'EXPRESS';
+  const numDocVal = document.getElementById('rNumDoc').value;
+  const client = mockClientes[numDocVal];
+  
+  if (!client) {
+    if (downloadApprovalBtn) {
+      downloadApprovalBtn.disabled = true;
+      downloadApprovalBtn.classList.add('hidden');
+    }
+    return;
   }
-
+  
+  const cost = toNumber(document.getElementById('rCost').value);
+  const initial = toNumber(document.getElementById('rInitial').value);
+  const minInitialPercent = client.cuotaInicialMinima;
+  const minInitialUSDByPercent = cost * (minInitialPercent / 100);
+  const minInitialUSDByCap = cost - (client.montoPreaprobado / 3.8);
+  const minInitialRequiredUSD = Math.max(minInitialUSDByPercent, minInitialUSDByCap);
+  
+  let currentOutcome = client.resultado;
+  if (client.resultado === 'AUMENTAR INICIAL' && initial >= minInitialRequiredUSD) {
+    currentOutcome = 'CALIFICA';
+  }
+  
+  const isExpress = client.carretera === 'Express';
+  const isCalifica = currentOutcome === 'CALIFICA';
+  const hasPhone = phoneVal.length === 9;
+  
   if (downloadApprovalBtn) {
-    const showBtn = isChecked && (road === 'EXPRESS') && (phoneVal.length === 9);
-    downloadApprovalBtn.disabled = !showBtn;
+    const showBtn = isChecked && isExpress && isCalifica;
     downloadApprovalBtn.classList.toggle('hidden', !showBtn);
+    downloadApprovalBtn.disabled = !(showBtn && hasPhone);
   }
 }
 
@@ -891,37 +952,45 @@ function showPendingEnvioResult(item) {
   activeBandejaItem = item;
   currentResultContext = 'bandeja-result';
   setResultHeaderStatus(item?.estado || 'PENDIENTE ENVÍO');
+  
+  const client = mockClientes[item.documento] || mockClientes["80569877"];
+  
   document.getElementById('rTipoDoc').value = 'DNI';
-  document.getElementById('rNumDoc').value = item?.documento || '80569877';
-  document.getElementById('rName').value = 'Juan Pedro Pérez García';
-  resultPhone.value = '987654321';
+  document.getElementById('rNumDoc').value = item?.documento;
+  document.getElementById('rName').value = client.nombres;
+  resultPhone.value = item?.phone || '987654321';
   resultPhone.required = true;
   resultPhone.classList.remove('attention');
 
-  const cost = item?.vehicleCost !== undefined ? item.vehicleCost : 450000;
+  const cost = item?.vehicleCost !== undefined ? item.vehicleCost : 25000;
   const initial = item?.initialAmount !== undefined ? item.initialAmount : 0;
   document.getElementById('rCost').value = formatMoney(cost);
   document.getElementById('rInitial').value = initial ? formatMoney(initial) : '0.00';
 
-  const financed = Math.max(cost - initial, 0);
-  updatePreApprovedBox(cost, initial, item?.selectedTerm);
-
   const spouseGrid = document.getElementById('rSpouseGridContainer');
-  if (item?.hasSpouse) {
+  if (item?.hasSpouse && client.conyuge) {
     spouseGrid.classList.remove('hidden');
-    document.getElementById('rSpouseTipoDoc').value = 'DNI';
-    document.getElementById('rSpouseNumDoc').value = '45781299';
+    document.getElementById('rSpouseTipoDoc').value = client.conyuge.tipoDoc;
+    document.getElementById('rSpouseNumDoc').value = client.conyuge.numDoc;
+    document.getElementById('rSpouseName').value = client.conyuge.nombres;
   } else {
     spouseGrid.classList.add('hidden');
   }
 
-  setResultStatus('approved');
-  requiredDocs.innerHTML = `
-    <ul class="docs-list">
-      <li>DNI ambas caras</li>
-    </ul>
-  `;
-  generateQuotaRows({ financed: financed, selectedTerm: item?.selectedTerm, disabled: false, item: item });
+  const rPreApprovedAmount = document.getElementById('rPreApprovedAmount');
+  const rMinInitial = document.getElementById('rMinInitial');
+  const rPreApprovedTerm = document.getElementById('rPreApprovedTerm');
+  
+  if (rPreApprovedAmount) rPreApprovedAmount.textContent = `S/ ${money(client.montoPreaprobado)}`;
+  if (rMinInitial) rMinInitial.textContent = `${client.cuotaInicialMinima}%`;
+  if (rPreApprovedTerm) rPreApprovedTerm.textContent = `${client.plazoMaximo || 60} meses`;
+
+  const preapprovedDetails = document.querySelector('.preapproved-box .preapproved-details');
+  if (preapprovedDetails) {
+    preapprovedDetails.style.display = 'flex';
+  }
+
+  recalculateSimulation(client, cost, initial);
 
   const rSucursalText = document.getElementById('rSucursalText');
   if (rSucursalText) rSucursalText.textContent = item?.sucursal || 'Lima Centro';
@@ -936,39 +1005,46 @@ function showPendingEnvioResult(item) {
 function showLockedApprovedResult(item) {
   activeBandejaItem = item;
   currentResultContext = 'bandeja-result';
-  setResultHeaderStatus(item?.estado || 'PENDIENTE ENVÍO');
+  setResultHeaderStatus(item?.estado || 'ENVIADO');
+  
+  const client = mockClientes[item.documento] || mockClientes["80569877"];
+  
   document.getElementById('rTipoDoc').value = 'DNI';
-  document.getElementById('rNumDoc').value = item?.documento || '80569877';
-  document.getElementById('rName').value = 'Juan Pedro Pérez García';
-  resultPhone.value = '987654321';
+  document.getElementById('rNumDoc').value = item?.documento;
+  document.getElementById('rName').value = client.nombres;
+  resultPhone.value = item?.phone || '987654321';
   resultPhone.required = true;
   resultPhone.classList.remove('attention');
 
-  const cost = item?.vehicleCost !== undefined ? item.vehicleCost : 450000;
+  const cost = item?.vehicleCost !== undefined ? item.vehicleCost : 25000;
   const initial = item?.initialAmount !== undefined ? item.initialAmount : 0;
   document.getElementById('rCost').value = formatMoney(cost);
   document.getElementById('rInitial').value = initial ? formatMoney(initial) : '0.00';
 
-  const financed = Math.max(cost - initial, 0);
-  updatePreApprovedBox(cost, initial, item?.selectedTerm);
-
   const spouseGrid = document.getElementById('rSpouseGridContainer');
-  if (item?.hasSpouse) {
+  if (item?.hasSpouse && client.conyuge) {
     spouseGrid.classList.remove('hidden');
-    document.getElementById('rSpouseTipoDoc').value = 'DNI';
-    document.getElementById('rSpouseNumDoc').value = '45781299';
+    document.getElementById('rSpouseTipoDoc').value = client.conyuge.tipoDoc;
+    document.getElementById('rSpouseNumDoc').value = client.conyuge.numDoc;
+    document.getElementById('rSpouseName').value = client.conyuge.nombres;
   } else {
     spouseGrid.classList.add('hidden');
   }
 
-  setResultStatus('approved');
-  requiredDocs.innerHTML = `
-    <ul class="docs-list">
-      <li>DNI ambas caras</li>
-    </ul>
-  `;
-  generateQuotaRows({ financed: financed, selectedTerm: item?.selectedTerm, disabled: true, item: item });
-  sendExecutiveBtn.disabled = true;
+  const rPreApprovedAmount = document.getElementById('rPreApprovedAmount');
+  const rMinInitial = document.getElementById('rMinInitial');
+  const rPreApprovedTerm = document.getElementById('rPreApprovedTerm');
+  
+  if (rPreApprovedAmount) rPreApprovedAmount.textContent = `S/ ${money(client.montoPreaprobado)}`;
+  if (rMinInitial) rMinInitial.textContent = `${client.cuotaInicialMinima}%`;
+  if (rPreApprovedTerm) rPreApprovedTerm.textContent = `${client.plazoMaximo || 60} meses`;
+
+  const preapprovedDetails = document.querySelector('.preapproved-box .preapproved-details');
+  if (preapprovedDetails) {
+    preapprovedDetails.style.display = 'flex';
+  }
+
+  recalculateSimulation(client, cost, initial);
 
   const rSucursalText = document.getElementById('rSucursalText');
   if (rSucursalText) rSucursalText.textContent = item?.sucursal || 'Lima Centro';
@@ -980,82 +1056,56 @@ function showLockedApprovedResult(item) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function showNoCalificaResult(item) {
-  activeBandejaItem = item;
-  currentResultContext = 'no-califica';
-  setResultHeaderStatus(item?.estado || 'NO CALIFICA');
-  document.getElementById('rTipoDoc').value = 'DNI';
-  document.getElementById('rNumDoc').value = '70589133';
-  document.getElementById('rName').value = 'Juan Pedro Pérez García';
-  resultPhone.value = '987654321';
-  resultPhone.required = true;
-  resultPhone.classList.remove('attention');
-
-  const cost = item?.vehicleCost !== undefined ? item.vehicleCost : 450000;
-  const initial = item?.initialAmount !== undefined ? item.initialAmount : 0;
-  document.getElementById('rCost').value = formatMoney(cost);
-  document.getElementById('rInitial').value = initial ? formatMoney(initial) : '0.00';
-
-  const financed = Math.max(cost - initial, 0);
-  updatePreApprovedBox(cost, initial, item?.selectedTerm);
-
-  const spouseGrid = document.getElementById('rSpouseGridContainer');
-  if (item?.hasSpouse) {
-    spouseGrid.classList.remove('hidden');
-    document.getElementById('rSpouseTipoDoc').value = 'DNI';
-    document.getElementById('rSpouseNumDoc').value = '45781299';
-  } else {
-    spouseGrid.classList.add('hidden');
-  }
-
-  setResultStatus('low-probability');
-  setFullEvaluationDocuments();
-  generateQuotaRows({ financed: financed, selectedTerm: item?.selectedTerm, disabled: true, alwaysSustentar: true, item: item });
-  sendExecutiveBtn.disabled = true;
-
-  const rSucursalText = document.getElementById('rSucursalText');
-  if (rSucursalText) rSucursalText.textContent = item?.sucursal || 'Lima Centro';
-  updateResultViewLockState(item?.estado || 'NO CALIFICA');
-
-  formView.classList.add('hidden');
-  bandejaView.classList.add('hidden');
-  resultView.classList.remove('hidden');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
 function showResult() {
   activeBandejaItem = null;
   currentResultContext = 'simulation';
   setResultHeaderStatus('PENDIENTE ENVÍO');
+  
+  const numDocVal = document.getElementById('numDoc').value;
+  const client = mockClientes[numDocVal];
+  
+  if (!client) {
+    showLoginAlert("El documento ingresado no se encuentra pre-aprobado. Use uno de los DNIs de prueba: 70569533 (CALIFICA), 71406119 (AUMENTAR INICIAL), 80569877 (REQUIERE SUSTENTO).", "Documento no encontrado");
+    return;
+  }
+  
   document.getElementById('rTipoDoc').value = document.getElementById('tipoDoc').value;
-  document.getElementById('rNumDoc').value = document.getElementById('numDoc').value;
-  document.getElementById('rName').value = 'Juan Pedro Pérez García';
+  document.getElementById('rNumDoc').value = numDocVal;
+  document.getElementById('rName').value = client.nombres;
   resultPhone.value = phone.value || '';
   resultPhone.required = true;
   resultPhone.classList.remove('attention');
+
+  const spouseGrid = document.getElementById('rSpouseGridContainer');
+  if (spouseToggle.checked && client.conyuge) {
+    spouseGrid.classList.remove('hidden');
+    document.getElementById('rSpouseTipoDoc').value = client.conyuge.tipoDoc;
+    document.getElementById('rSpouseNumDoc').value = client.conyuge.numDoc;
+    document.getElementById('rSpouseName').value = client.conyuge.nombres;
+  } else {
+    spouseGrid.classList.add('hidden');
+  }
+
+  const rPreApprovedAmount = document.getElementById('rPreApprovedAmount');
+  const rMinInitial = document.getElementById('rMinInitial');
+  const rPreApprovedTerm = document.getElementById('rPreApprovedTerm');
+  
+  if (rPreApprovedAmount) rPreApprovedAmount.textContent = `S/ ${money(client.montoPreaprobado)}`;
+  if (rMinInitial) rMinInitial.textContent = `${client.cuotaInicialMinima}%`;
+  if (rPreApprovedTerm) rPreApprovedTerm.textContent = `${client.plazoMaximo || 60} meses`;
+
+  const preapprovedDetails = document.querySelector('.preapproved-box .preapproved-details');
+  if (preapprovedDetails) {
+    preapprovedDetails.style.display = 'flex';
+  }
 
   const cost = toNumber(vehicleCost.value);
   const initial = toNumber(initialAmount.value);
   document.getElementById('rCost').value = formatMoney(cost);
   document.getElementById('rInitial').value = initial ? formatMoney(initial) : '0.00';
 
-  const financed = Math.max(cost - initial, 0);
-  updatePreApprovedBox(cost, initial, null);
+  recalculateSimulation(client, cost, initial);
 
-  const spouseGrid = document.getElementById('rSpouseGridContainer');
-  if (spouseToggle.checked) {
-    spouseGrid.classList.remove('hidden');
-    document.getElementById('rSpouseTipoDoc').value = document.getElementById('spouseTipoDoc').value;
-    document.getElementById('rSpouseNumDoc').value = document.getElementById('spouseNumDoc').value;
-  } else {
-    spouseGrid.classList.add('hidden');
-  }
-
-  setResultStatus('approved');
-  generateQuotaRows({ financed: financed, selectedTerm: null, disabled: false });
-  sendExecutiveBtn.disabled = true;
-
-  // Set branch and dealership text
   const selectSede = document.getElementById('sedeSelect');
   const sucursalVal = selectSede ? selectSede.options[selectSede.selectedIndex].text : 'Lima Centro';
   const rSucursalText = document.getElementById('rSucursalText');
@@ -1071,19 +1121,17 @@ function showResult() {
 
 function actionButtons(item) {
   const isPendiente = item.estado === 'PENDIENTE ENVÍO';
-  const isNoCalifica = item.estado === 'NO CALIFICA';
   
-  const simOption = `<button type="button" class="dropdown-item sim-row" data-estado="${item.estado}" data-solicitud="${item.solicitud}">Simulación</button>`;
-  const sendOption = `<button type="button" class="dropdown-item send-row" data-solicitud="${item.solicitud}">Enviar</button>`;
-  const viewOption = `<button type="button" class="dropdown-item view-row" data-solicitud="${item.solicitud}">Vista</button>`;
+  const verOption = `<button type="button" class="dropdown-item ver-row" data-solicitud="${item.solicitud}">Ver</button>`;
+  const editarOption = `<button type="button" class="dropdown-item editar-row" data-solicitud="${item.solicitud}">Editar</button>`;
+  const enviarOption = `<button type="button" class="dropdown-item enviar-row" data-solicitud="${item.solicitud}">Enviar</button>`;
+  const trackingOption = `<button type="button" class="dropdown-item tracking-row" data-solicitud="${item.solicitud}">Tracking</button>`;
   
   let menuHtml = '';
   if (isPendiente) {
-    menuHtml = `${simOption}${sendOption}`;
-  } else if (isNoCalifica) {
-    menuHtml = `${simOption}`;
+    menuHtml = `${verOption}${editarOption}${enviarOption}`;
   } else {
-    menuHtml = `${viewOption}${simOption}`;
+    menuHtml = `${verOption}${trackingOption}`;
   }
   
   return `
@@ -1100,74 +1148,103 @@ function actionButtons(item) {
   `;
 }
 
+function showTracking(item) {
+  trackingSolicitud.textContent = item.solicitud;
+  
+  const steps = [
+    { name: 'Simulación creada', state: 'PENDIENTE ENVÍO' },
+    { name: 'Enviada al ejecutivo', state: 'ENVIADO' },
+    { name: 'En atención', state: 'EN ATENCIÓN' },
+    { name: 'Aprobada', state: 'APROBADO' },
+    { name: 'Activada', state: 'ACTIVADO' }
+  ];
+  
+  const stateOrder = ['PENDIENTE ENVÍO', 'ENVIADO', 'EN ATENCIÓN', 'APROBADO', 'ACTIVADO'];
+  const currentStateIndex = stateOrder.indexOf(item.estado);
+  
+  const trackingLine = $('trackingLine');
+  if (trackingLine) {
+    trackingLine.innerHTML = steps.map((step, idx) => {
+      const isDone = idx <= currentStateIndex;
+      const doneClass = isDone ? 'done' : '';
+      const dateText = isDone ? (idx === 0 ? item.fecha : (item.fechaEnvio || item.fecha || '20-06-2026 15:03:30')) : 'Pendiente';
+      return `
+        <div class="tracking-step ${doneClass}">
+          <span></span>
+          <strong>${step.name}</strong>
+          <small>${dateText}</small>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  trackingModal.classList.remove('hidden');
+}
+
 function renderBandeja(data = bandejaData) {
   bandejaBody.innerHTML = data.map(item => {
     const displayedSolicitud = item.estado === 'PENDIENTE ENVÍO' ? '-' : item.solicitud;
     const sucursal = item.sucursal || 'Lima Centro';
-    const carretera = item.carretera || 'EXPRESS';
+    
+    // Look up client details from mockClientes
+    const client = mockClientes[item.documento] || {
+      nombres: 'Juan Pedro Pérez García',
+      resultado: 'CALIFICA',
+      carretera: 'Express'
+    };
+    
+    const clientName = client.nombres;
+    const resultado = client.resultado;
+    const carretera = client.carretera;
     const carreteraClass = carretera.toLowerCase().replace(' ', '-');
+    
     return `
     <tr>
-      <td data-label="N° Solicitud">${displayedSolicitud}</td>
-      <td data-label="N° Documento">${item.documento}</td>
-      <td data-label="Sucursal">${sucursal}</td>
-      <td data-label="Carretera"><span class="carretera-badge ${carreteraClass}">${carretera}</span></td>
+      <td data-label="Solicitud">${displayedSolicitud}</td>
+      <td data-label="Documento">${item.documento}</td>
+      <td data-label="Cliente">${clientName}</td>
       <td data-label="Fecha">${item.fecha}</td>
+      <td data-label="Resultado"><span class="resultado-badge estado-${resultado.toLowerCase().replace(/\s+/g, '-')}">${resultado}</span></td>
+      <td data-label="Carretera"><span class="carretera-badge ${carreteraClass}">${carretera}</span></td>
       <td data-label="Estado"><span class="estado estado-${item.estado.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-')}">${item.estado}</span></td>
+      <td data-label="Sucursal">${sucursal}</td>
       <td data-label="Acciones"><div class="row-actions">${actionButtons(item)}</div></td>
     </tr>
   `;
   }).join('');
 
-  bandejaSummary.innerHTML = ['PENDIENTE ENVÍO', 'ENVIADO', 'NO CALIFICA', 'EN ATENCIÓN', 'APROBADO', 'ACTIVADO']
+  bandejaSummary.innerHTML = ['PENDIENTE ENVÍO', 'ENVIADO', 'EN ATENCIÓN', 'APROBADO', 'ACTIVADO']
     .map(state => {
       const count = data.filter(item => item.estado === state).length;
       const cls = state.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-');
       return `<span><i class="dot dot-${cls}"></i>${state} <strong>${count}</strong></span>`;
     }).join('');
 
-  document.querySelectorAll('.view-row').forEach(btn => {
+  document.querySelectorAll('.ver-row').forEach(btn => {
     btn.addEventListener('click', () => {
-      trackingSolicitud.textContent = btn.dataset.solicitud;
-      trackingModal.classList.remove('hidden');
+      const rowDoc = btn.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+      const itemToView = bandejaData.find(x => x.solicitud === btn.dataset.solicitud) || bandejaData.find(x => x.documento === rowDoc && x.estado === 'PENDIENTE ENVÍO');
+      if (itemToView) showLockedApprovedResult(itemToView);
     });
   });
 
-  document.querySelectorAll('.sim-row').forEach(btn => {
+  document.querySelectorAll('.editar-row').forEach(btn => {
     btn.addEventListener('click', () => {
-      const bandejaItem = bandejaData.find(item => item.solicitud === btn.dataset.solicitud);
-
-      if (btn.dataset.estado === 'NO CALIFICA') {
-        showNoCalificaResult(bandejaItem);
-        return;
-      }
-
-      if (btn.dataset.estado === 'PENDIENTE ENVÍO') {
-        showPendingEnvioResult(bandejaItem);
-        return;
-      }
-
-      const lockedResultStates = ['ENVIADO', 'EN ATENCIÓN', 'APROBADO', 'ACTIVADO'];
-      if (lockedResultStates.includes(btn.dataset.estado)) {
-        showLockedApprovedResult(bandejaItem);
-        return;
-      }
-
-      showModule('simulacion');
+      const rowDoc = btn.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+      const itemToEdit = bandejaData.find(x => x.solicitud === btn.dataset.solicitud) || bandejaData.find(x => x.documento === rowDoc && x.estado === 'PENDIENTE ENVÍO');
+      if (itemToEdit) showPendingEnvioResult(itemToEdit);
     });
   });
 
-  document.querySelectorAll('.send-row').forEach(btn => {
+  document.querySelectorAll('.enviar-row').forEach(btn => {
     btn.addEventListener('click', () => {
-      const solId = btn.dataset.solicitud;
-      const item = bandejaData.find(x => x.solicitud === solId);
-      if (item) {
+      const rowDoc = btn.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+      const itemToSend = bandejaData.find(x => x.solicitud === btn.dataset.solicitud) || bandejaData.find(x => x.documento === rowDoc && x.estado === 'PENDIENTE ENVÍO');
+      if (itemToSend) {
         const generatedNum = 'SOL' + Math.floor(10000 + Math.random() * 90000);
-        item.solicitud = generatedNum;
-        item.estado = 'ENVIADO';
-        item.fecha = getCurrentDateTimeString();
-        if (!item.sucursal) item.sucursal = 'Lima Centro';
-        if (!item.carretera) item.carretera = 'EXPRESS';
+        itemToSend.solicitud = generatedNum;
+        itemToSend.estado = 'ENVIADO';
+        itemToSend.fechaEnvio = getCurrentDateTimeString();
         
         renderBandeja();
         
@@ -1177,6 +1254,13 @@ function renderBandeja(data = bandejaData) {
         }
         openSuccessModal();
       }
+    });
+  });
+
+  document.querySelectorAll('.tracking-row').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = bandejaData.find(x => x.solicitud === btn.dataset.solicitud);
+      if (item) showTracking(item);
     });
   });
 
@@ -1317,7 +1401,7 @@ form.addEventListener('submit', (e) => {
 });
 
 backBtn.addEventListener('click', () => {
-  if (currentResultContext === 'no-califica' || currentResultContext === 'bandeja-result') {
+  if (currentResultContext === 'bandeja-result') {
     showModule('bandeja');
     return;
   }
@@ -1348,6 +1432,11 @@ downloadApprovalBtn.addEventListener('click', () => {
     return;
   }
 
+  if (otpBlocked) {
+    showLoginAlert("El servicio de verificación OTP se encuentra bloqueado por exceder el límite de intentos o expirar el tiempo.", "Bloqueado");
+    return;
+  }
+
   // Reset SMS inputs
   smsInputs.forEach(input => input.value = '');
   if (btnAcceptSmsVerification) btnAcceptSmsVerification.disabled = true;
@@ -1356,6 +1445,9 @@ downloadApprovalBtn.addEventListener('click', () => {
   if (smsVerificationMessage) {
     smsVerificationMessage.innerHTML = `Se envió un código de 4 dígitos al número <strong>${phoneVal}</strong>. Ingresar dígitos:`;
   }
+
+  // Start timer
+  startOtpTimer();
 
   // Show SMS verification modal
   if (smsVerificationModal) {
@@ -1390,12 +1482,32 @@ function checkSmsInputs() {
 }
 
 btnCancelSmsVerification?.addEventListener('click', () => {
+  if (otpTimer) clearInterval(otpTimer);
   smsVerificationModal.classList.add('hidden');
 });
 
 btnAcceptSmsVerification?.addEventListener('click', () => {
-  smsVerificationModal.classList.add('hidden');
-  downloadApprovalLetter();
+  const code = smsInputs.map(input => input.value).join('');
+  if (code === '1234') {
+    clearInterval(otpTimer);
+    otpValidated = true;
+    smsVerificationModal.classList.add('hidden');
+    showToast("Código OTP verificado con éxito.");
+    downloadApprovalLetter();
+  } else {
+    otpAttempts++;
+    if (otpAttempts >= 3) {
+      otpBlocked = true;
+      clearInterval(otpTimer);
+      smsVerificationModal.classList.add('hidden');
+      showLoginAlert("Ha superado los 3 intentos permitidos. El servicio ha sido bloqueado.", "Bloqueado");
+    } else {
+      showLoginAlert(`Código incorrecto. Intento ${otpAttempts} de 3.`, "Error");
+      smsInputs.forEach(input => input.value = '');
+      smsInputs[0].focus();
+      if (btnAcceptSmsVerification) btnAcceptSmsVerification.disabled = true;
+    }
+  }
 });
 
 if (closePhoneModal) closePhoneModal.addEventListener('click', () => {});
@@ -1514,33 +1626,24 @@ cleanSearchBtn.addEventListener('click', () => {
 document.getElementById('rSimulateBtn')?.addEventListener('click', () => {
   const cost = toNumber(document.getElementById('rCost').value);
   const initial = toNumber(document.getElementById('rInitial').value);
-  const financed = Math.max(cost - initial, 0);
 
-  const termVal = activeBandejaItem ? activeBandejaItem.selectedTerm : null;
-  updatePreApprovedBox(cost, initial, termVal);
-
-  vehicleCost.value = formatMoney(cost);
-  initialAmount.value = initial ? formatMoney(initial) : '';
-  updatePercent();
-  validateForm();
+  // Find current client
+  const numDocVal = document.getElementById('rNumDoc').value;
+  const client = mockClientes[numDocVal];
+  
+  if (!client) return;
 
   if (activeBandejaItem) {
     activeBandejaItem.vehicleCost = cost;
     activeBandejaItem.initialAmount = initial;
   }
 
-  const isNoCalifica = currentResultContext === 'no-califica';
-  const isDisabled = isNoCalifica || (activeBandejaItem && activeBandejaItem.estado !== 'PENDIENTE ENVÍO');
-  
-  generateQuotaRows({
-    financed: financed,
-    selectedTerm: termVal,
-    disabled: isDisabled,
-    alwaysSustentar: isNoCalifica,
-    item: activeBandejaItem
-  });
-  
-  aplicarLineaPreaprobadaFija();
+  vehicleCost.value = formatMoney(cost);
+  initialAmount.value = initial ? formatMoney(initial) : '';
+  updatePercent();
+  validateForm();
+
+  recalculateSimulation(client, cost, initial);
   showToast('Re-simulación completada.');
 });
 

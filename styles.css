@@ -547,7 +547,7 @@ td { color: #555; }
 .tracking-card h3 { font-size: 28px; text-transform: uppercase; }
 .tracking-line {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 10px;
   margin: 28px 0;
   position: relative;
@@ -556,8 +556,8 @@ td { color: #555; }
   content: "";
   position: absolute;
   top: 25px;
-  left: 12%;
-  right: 12%;
+  left: 10%;
+  right: 10%;
   height: 2px;
   background: #9ca3af;
 }
@@ -1074,15 +1074,15 @@ td { color: #555; }
   color: #15803d !important;
   border: 1px solid #bbf7d0 !important;
 }
-.road-docs.escritorio, .road-badge.escritorio {
+.road-docs.preferente, .road-badge.preferente {
+  background: #ffedd5 !important;
+  color: #c2410c !important;
+  border: 1px solid #fed7aa !important;
+}
+.road-docs.verificado, .road-badge.verificado {
   background: #e0f2fe !important;
   color: #0369a1 !important;
   border: 1px solid #bae6fd !important;
-}
-.road-docs.semi-full, .road-badge.semi-full {
-  background: #fef3c7 !important;
-  color: #b45309 !important;
-  border: 1px solid #fde68a !important;
 }
 .road-docs.full, .road-badge.full {
   background: #f3e8ff !important;
@@ -1107,20 +1107,54 @@ td { color: #555; }
   color: #15803d;
   border-color: #bbf7d0;
 }
-.carretera-badge.escritorio {
+.carretera-badge.preferente {
+  background: #ffedd5;
+  color: #c2410c;
+  border-color: #fed7aa;
+}
+.carretera-badge.verificado {
   background: #e0f2fe;
   color: #0369a1;
   border-color: #bae6fd;
-}
-.carretera-badge.semi-full {
-  background: #fef3c7;
-  color: #b45309;
-  border-color: #fde68a;
 }
 .carretera-badge.full {
   background: #f3e8ff;
   color: #6d28d9;
   border-color: #e9d5ff;
+}
+
+/* Colores de cajas de resultado */
+.success-box.califica {
+  background: #22c55e !important;
+}
+.success-box.aumentar-inicial {
+  background: #f97316 !important;
+}
+.success-box.requiere-sustento {
+  background: #d97706 !important;
+}
+
+/* Resultado Badges in Bandeja */
+.resultado-badge {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 11px;
+  display: inline-block;
+  text-align: center;
+  text-transform: uppercase;
+}
+.resultado-badge.estado-califica {
+  background: #dcfce7;
+  color: #15803d;
+}
+.resultado-badge.estado-aumentar-inicial {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.resultado-badge.estado-requiere-sustento {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 /* Cabecera de Concesionario y Sucursal en la vista de resultados */
